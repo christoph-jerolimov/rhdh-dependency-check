@@ -1,0 +1,44 @@
+---
+import '../styles/global.css';
+import { href } from '../lib/format';
+import { loadReport } from '../lib/data';
+
+interface Props {
+  title: string;
+  description?: string;
+}
+const { title, description } = Astro.props;
+const report = loadReport();
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title} · RHDH dependency check</title>
+    {description && <meta name="description" content={description} />}
+    <link rel="icon" type="image/svg+xml" href={href('/favicon.svg')} />
+  </head>
+  <body>
+    <header class="site">
+      <div class="inner">
+        <a class="brand" href={href('/')}>RHDH dependency check</a>
+        <nav>
+          <a href={href('/')}>Overview</a>
+          {report?.repositories.map((repo) => <a href={href(`/repos/${repo.slug}/`)}>{repo.slug}</a>)}
+          <a href={href('/packages/')}>All packages</a>
+        </nav>
+        <span class="spacer" style="flex:1"></span>
+        {report && <span class="muted small">generated {report.generatedAt.replace('T', ' ').slice(0, 16)} UTC</span>}
+      </div>
+    </header>
+    <main>
+      <slot />
+    </main>
+    <footer class="site">
+      Data from the npm registry. Outdated = a newer <code>latest</code> exists than the resolved version;
+      stale = the newest release is older than {report?.staleAfterDays ?? 365} days; security = an npm advisory matches the resolved version.
+      Source: <a href="https://github.com/christoph-jerolimov/rhdh-dependency-check">christoph-jerolimov/rhdh-dependency-check</a>.
+    </footer>
+  </body>
+</html>

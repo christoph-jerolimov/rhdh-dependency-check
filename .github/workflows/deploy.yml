@@ -1,0 +1,105 @@
+name: Build and deploy dependency report
+
+on:
+  schedule:
+    # Daily, early morning UTC. The npm metadata cache is reused across runs.
+    - cron: '17 4 * * *'
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      cache_ttl_hours:
+        description: 'Reuse cached npm registry answers younger than this many hours'
+        default: '24'
+        required: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one deployment at a time; do not cancel a running one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      NPM_CACHE_TTL_HOURS: ${{ github.event.inputs.cache_ttl_hours || '24' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure GitHub Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      # The cache key always changes so that a fresh cache is saved after every
+      # run; restore-keys picks the most recent one. Entries carry their own
+      # fetch timestamp and are refreshed once older than NPM_CACHE_TTL_HOURS.
+      - name: Restore npm registry metadata cache
+        id: npm-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/npm
+          key: npm-registry-metadata-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            npm-registry-metadata-
+
+      - name: Clone scanned repositories
+        run: npm run clone
+
+      - name: Collect package.json files
+        run: npm run collect
+
+      - name: Check dependencies against the npm registry
+        run: npm run check
+
+      # Save even if a later step fails so partial progress is reused next time.
+      - name: Save npm registry metadata cache
+        if: always() && steps.npm-cache.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/npm
+          key: ${{ steps.npm-cache.outputs.cache-primary-key }}
+
+      - name: Build site
+        run: npm run build
+        env:
+          SITE: ${{ steps.pages.outputs.origin }}
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}
+
+      - name: Upload report data
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-data
+          path: data/
+          retention-days: 14
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,80 @@
+---
+/** Expand/collapse, "problems only" toggle and name filter; shared by the repo and package pages. */
+interface Props {
+  filterPlaceholder?: string;
+  showExpand?: boolean;
+}
+const { filterPlaceholder = 'Filter dependencies by name…', showExpand = true } = Astro.props;
+---
+<div class="controls" id="controls">
+  {showExpand && <button type="button" data-action="expand">Expand all</button>}
+  {showExpand && <button type="button" data-action="collapse">Collapse all</button>}
+  <label><input type="checkbox" id="problems-only" /> Only show findings</label>
+  <input type="search" id="name-filter" placeholder={filterPlaceholder} autocomplete="off" />
+  <span class="muted small" id="filter-status"></span>
+</div>
+<script>
+  const body = document.body;
+  const problemsOnly = document.getElementById('problems-only') as HTMLInputElement | null;
+  const nameFilter = document.getElementById('name-filter') as HTMLInputElement | null;
+  const status = document.getElementById('filter-status');
+
+  const applyProblemsOnly = () => {
+    const on = Boolean(problemsOnly?.checked);
+    body.classList.toggle('problems-only', on);
+    try {
+      localStorage.setItem('problems-only', on ? '1' : '0');
+    } catch {}
+  };
+  const applyNameFilter = () => {
+    const query = (nameFilter?.value ?? '').trim().toLowerCase();
+    const rows = document.querySelectorAll<HTMLElement>('tr[data-name]');
+    let shown = 0;
+    rows.forEach((row) => {
+      const match = !query || (row.dataset.name ?? '').includes(query);
+      row.classList.toggle('filtered-out', !match);
+      if (match) shown++;
+    });
+    // Hide package sections without a visible dependency row; open the ones that match.
+    document.querySelectorAll<HTMLDetailsElement>('details.pkg').forEach((pkg) => {
+      const visible = pkg.querySelector('tr[data-name]:not(.filtered-out)') !== null;
+      pkg.classList.toggle('filtered-out', Boolean(query) && !visible);
+      if (query && visible) pkg.open = true;
+    });
+    document.querySelectorAll<HTMLDetailsElement>('details.workspace').forEach((ws) => {
+      const visible = ws.querySelector('details.pkg:not(.filtered-out)') !== null;
+      ws.classList.toggle('filtered-out', Boolean(query) && !visible);
+      if (query && visible) ws.open = true;
+    });
+    if (status) status.textContent = query ? `${shown} matching ${shown === 1 ? 'entry' : 'entries'}` : '';
+  };
+
+  try {
+    if (problemsOnly && localStorage.getItem('problems-only') === '1') problemsOnly.checked = true;
+  } catch {}
+  applyProblemsOnly();
+  problemsOnly?.addEventListener('change', applyProblemsOnly);
+  nameFilter?.addEventListener('input', applyNameFilter);
+
+  document.querySelectorAll<HTMLButtonElement>('#controls button[data-action]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const open = button.dataset.action === 'expand';
+      document.querySelectorAll<HTMLDetailsElement>('details.pkg, details.workspace').forEach((d) => (d.open = open));
+    });
+  });
+
+  // Open the section a #hash points at (details inside details stay closed otherwise).
+  const openHash = () => {
+    if (!location.hash) return;
+    const target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+    if (!target) return;
+    let el: HTMLElement | null = target;
+    while (el) {
+      if (el instanceof HTMLDetailsElement) el.open = true;
+      el = el.parentElement;
+    }
+    target.scrollIntoView();
+  };
+  openHash();
+  window.addEventListener('hashchange', openHash);
+</script>

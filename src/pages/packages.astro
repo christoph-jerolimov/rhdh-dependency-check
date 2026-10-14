@@ -1,0 +1,53 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Controls from '../components/Controls.astro';
+import { loadReport } from '../lib/data';
+import { formatAge, formatDate, href } from '../lib/format';
+
+const report = loadReport();
+const staleAfterDays = report?.staleAfterDays ?? 365;
+const packages = report ? Object.values(report.packages).sort((a, b) => a.name.localeCompare(b.name)) : [];
+
+function level(p: (typeof packages)[number]) {
+  if (p.advisories.length) return 'vulnerable';
+  if (p.deprecated) return 'deprecated';
+  if (p.notFound || p.error) return 'unknown';
+  if (p.latestAgeDays !== null && p.latestAgeDays > staleAfterDays) return 'stale';
+  return 'ok';
+}
+---
+<Layout title="All packages" description="Every npm package used by the scanned repositories.">
+  <h1>All npm packages</h1>
+  <p class="muted">
+    {packages.length} unique packages referenced by the scanned repositories, with their latest release on npm.
+    Advisories listed here apply to at least one resolved version in use; see the repository pages for the exact occurrences.
+  </p>
+  <Controls showExpand={false} filterPlaceholder="Filter packages by name…" />
+  <table class="deps">
+    <thead>
+      <tr><th>Package</th><th>Latest</th><th>Published</th><th class="num">Usages</th><th>Repositories</th><th>Versions in use</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      {packages.map((p) => (
+        <tr data-level={level(p)} data-name={p.name.toLowerCase()}>
+          <td class="name"><a href={`https://www.npmjs.com/package/${p.name}`} target="_blank" rel="noopener">{p.name}</a></td>
+          <td>{p.latest ? <code>{p.latest}</code> : <span class="muted">–</span>}</td>
+          <td title={p.latestTime ?? ''} class="nowrap">{formatDate(p.latestTime)} <span class="muted small">{formatAge(p.latestAgeDays)}</span></td>
+          <td class="num">{p.usageCount}</td>
+          <td class="small">{p.repositories.map((slug) => <a href={href(`/repos/${slug}/`)} style="margin-right:0.4rem">{slug}</a>)}</td>
+          <td class="small mono">{p.resolvedVersions.join(', ')}</td>
+          <td class="status">
+            {p.advisories.map((a) => (
+              <span class="advisory"><span class={`sev ${a.severity}`}>{a.severity}</span> <a href={a.url} target="_blank" rel="noopener">{a.title}</a> <span class="muted">({a.vulnerableVersions})</span></span>
+            ))}
+            {p.deprecated && <span class="detail" title={p.deprecated}>Deprecated: {p.deprecated.length > 160 ? `${p.deprecated.slice(0, 160)}…` : p.deprecated}</span>}
+            {p.notFound && <span class="detail">not found on the npm registry</span>}
+            {p.error && <span class="detail">lookup failed: {p.error}</span>}
+            {p.latestAgeDays !== null && p.latestAgeDays > staleAfterDays && <span class="badge stale">no release for {formatAge(p.latestAgeDays).replace(' ago', '')}</span>}
+            {level(p) === 'ok' && <span class="badge ok">active</span>}
+          </td>
+        </tr>
+      ))}
+    </tbody>
+  </table>
+</Layout>

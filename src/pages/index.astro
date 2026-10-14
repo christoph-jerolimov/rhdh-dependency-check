@@ -1,0 +1,67 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Counts from '../components/Counts.astro';
+import { loadReport, issueCount } from '../lib/data';
+import { formatDate, href } from '../lib/format';
+
+const report = loadReport();
+const packages = report ? Object.values(report.packages) : [];
+const deprecatedPackages = packages.filter((p) => p.deprecated).length;
+const stalePackages = packages.filter((p) => p.latestAgeDays !== null && p.latestAgeDays > (report?.staleAfterDays ?? 365)).length;
+const vulnerablePackages = packages.filter((p) => p.advisories.length).length;
+---
+<Layout title="Overview" description="Dependency health of Backstage, RHDH and related plugin repositories.">
+  <h1>Dependency check</h1>
+  <p class="muted">
+    Every <code>package.json</code> in five repositories, checked against the npm registry for newer versions,
+    deprecations, security advisories and releases older than a year.
+  </p>
+
+  {!report && (
+    <p><strong>No report data yet.</strong> Run <code>npm run report</code> to clone the repositories and query the npm registry, then rebuild the site.</p>
+  )}
+
+  {report && (
+    <>
+      <h2>All repositories</h2>
+      <p><Counts summary={report.summary} /></p>
+      <p class="muted small">
+        {packages.length} unique npm packages: {vulnerablePackages} with advisories, {deprecatedPackages} deprecated, {stalePackages} without a release for over a year.
+        <a href={href('/packages/')}>Browse all packages</a>.
+      </p>
+
+      <div class="cards">
+        {report.repositories.map((repo) => (
+          <div class="card">
+            <h3><a href={href(`/repos/${repo.slug}/`)}>{repo.name}</a></h3>
+            <p class="muted small">{repo.description}</p>
+            <p class="small">
+              {repo.packages.length} package.json files
+              {repo.workspaceDir && <span> · {new Set(repo.packages.map((p) => p.workspace).filter(Boolean)).size} workspaces</span>}
+              · {issueCount(repo.summary)} findings
+            </p>
+            <p class="muted small">
+              {repo.commit && <span>commit <a href={`${repo.url}/commit/${repo.commit}`} target="_blank" rel="noopener"><code>{repo.commit.slice(0, 7)}</code></a> ({formatDate(repo.commitDate)})</span>}
+            </p>
+            <Counts summary={repo.summary} />
+          </div>
+        ))}
+      </div>
+
+      <h2>How to read the status</h2>
+      <div class="legend">
+        <span><span class="badge vulnerable">security</span> an npm security advisory covers the resolved version</span>
+        <span><span class="badge deprecated">deprecated</span> the resolved or the latest version is deprecated on npm</span>
+        <span><span class="badge outdated-major">major update</span> a newer major version is published</span>
+        <span><span class="badge outdated">outdated</span> a newer minor or patch version is published</span>
+        <span><span class="badge stale">stale</span> up to date, but the latest release is older than {report.staleAfterDays} days</span>
+        <span><span class="badge ok">up to date</span> the resolved version is the latest</span>
+        <span><span class="badge local">local</span> workspace, link or git dependency, not checked</span>
+        <span><span class="badge unknown">unknown</span> not found on npm or lookup failed</span>
+      </div>
+      <p class="muted small">
+        "Resolved" is the exact version from the nearest lockfile; without a lockfile entry (typically peer dependencies, marked with *) it is the highest published version matching the range.
+      </p>
+    </>
+  )}
+</Layout>

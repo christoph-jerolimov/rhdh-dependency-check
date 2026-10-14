@@ -1,0 +1,9 @@
+node_modules/
+/dist/
+.astro/
+# generated at report time
+/repos/
+/data/
+.cache/
+*.log
+.DS_Store

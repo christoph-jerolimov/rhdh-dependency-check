@@ -1,0 +1,36 @@
+---
+import type { PackageJson, Repository } from '../lib/types';
+import { anchorId } from '../lib/format';
+import { issueCount } from '../lib/data';
+import Counts from './Counts.astro';
+import DependencyTable from './DependencyTable.astro';
+
+interface Props {
+  repo: Repository;
+  pkg: PackageJson;
+  open?: boolean;
+}
+const { repo, pkg, open = false } = Astro.props;
+const id = anchorId('pkg', pkg.file);
+const issues = issueCount(pkg.summary);
+const commitRef = repo.commit ?? 'HEAD';
+const sourceUrl = `${repo.url}/blob/${commitRef}/${pkg.file}`;
+---
+<details class="pkg" id={id} data-issues={issues} data-name={(pkg.name ?? pkg.file).toLowerCase()} open={open}>
+  <summary>
+    <span class="title">{pkg.name ?? '(unnamed)'}</span>
+    {pkg.version && <code class="muted small">{pkg.version}</code>}
+    <span class="path">{pkg.file}</span>
+    <span class="spacer"></span>
+    <Counts summary={pkg.summary} />
+  </summary>
+  <div class="body">
+    <div class="meta">
+      <a href={sourceUrl} target="_blank" rel="noopener">View on GitHub</a>
+      {pkg.lockfile ? <span> · lockfile: <code>{pkg.lockfile}</code></span> : <span> · no lockfile found (versions resolved from ranges)</span>}
+      {pkg.private && <span> · private</span>}
+      <a class="small" href={`#${id}`} style="margin-left:0.5rem">#</a>
+    </div>
+    <DependencyTable dependencies={pkg.dependencies} />
+  </div>
+</details>

@@ -1,0 +1,80 @@
+---
+import type { Dependency } from '../lib/types';
+import { formatAge, formatDate, levelLabels, typeLabels } from '../lib/format';
+
+interface Props {
+  dependencies: Dependency[];
+}
+const { dependencies } = Astro.props;
+
+function npmUrl(name: string) {
+  return `https://www.npmjs.com/package/${name}`;
+}
+function outdatedText(dep: Dependency) {
+  const o = dep.flags.outdated!;
+  let text = `${o.diff} update available`;
+  if (o.behindDays !== null && o.behindDays > 0) text += `, resolved version is ${formatAge(o.behindDays).replace(' ago', '')} behind`;
+  text += o.rangeAllowsLatest ? ' (range already allows it; refresh the lockfile)' : ' (range needs a bump)';
+  return text;
+}
+function resolvedTitle(dep: Dependency) {
+  if (!dep.resolved) return '';
+  const source = dep.resolvedSource === 'lockfile' ? 'from the lockfile' : dep.resolvedSource === 'tag' ? 'dist-tag' : 'highest version matching the range (no lockfile entry)';
+  return `${source}${dep.resolvedTime ? `, published ${formatDate(dep.resolvedTime)}` : ''}`;
+}
+---
+<table class="deps">
+  <thead>
+    <tr>
+      <th>Dependency</th>
+      <th>Type</th>
+      <th>Range</th>
+      <th>Resolved</th>
+      <th>Latest</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {dependencies.length === 0 && <tr><td colspan="6" class="muted">No dependencies.</td></tr>}
+    {dependencies.map((dep) => (
+      <tr data-level={dep.level} data-name={dep.name.toLowerCase()}>
+        <td class="name">
+          {dep.kind === 'npm' || dep.kind === 'alias' ? <a href={npmUrl(dep.packageName)} target="_blank" rel="noopener">{dep.name}</a> : dep.name}
+          {dep.kind === 'alias' && <span class="muted small"> → {dep.packageName}</span>}
+        </td>
+        <td><span class="badge type">{typeLabels[dep.type] ?? dep.type}</span></td>
+        <td><code>{dep.spec}</code></td>
+        <td title={resolvedTitle(dep)}>
+          {dep.resolved ? <code>{dep.resolved}</code> : <span class="muted">–</span>}
+          {dep.resolved && dep.resolvedSource !== 'lockfile' && dep.kind !== 'local' && <span class="muted small" title="no lockfile entry; highest version matching the range">*</span>}
+        </td>
+        <td>
+          {dep.latest ? <code>{dep.latest}</code> : <span class="muted">–</span>}
+          {dep.latestTime && <span class="muted small" title={dep.latestTime}> {formatDate(dep.latestTime)}</span>}
+        </td>
+        <td class="status">
+          <span class={`badge ${dep.level}`}>{levelLabels[dep.level]}</span>
+          {dep.flags.vulnerable?.map((a) => (
+            <span class="advisory">
+              <span class={`sev ${a.severity}`}>{a.severity}</span>{' '}
+              <a href={a.url} target="_blank" rel="noopener">{a.title}</a>
+              <span class="muted"> ({a.vulnerableVersions})</span>
+            </span>
+          ))}
+          {dep.flags.deprecated && (
+            <span class="detail" title={dep.flags.deprecated.message}>
+              {dep.flags.deprecated.resolvedDeprecated ? 'Deprecated: ' : 'Latest version deprecated: '}
+              {dep.flags.deprecated.message.length > 160 ? `${dep.flags.deprecated.message.slice(0, 160)}…` : dep.flags.deprecated.message}
+            </span>
+          )}
+          {dep.flags.outdated && <span class="detail">{outdatedText(dep)}</span>}
+          {dep.flags.stale && (
+            <span class="detail">Latest release is {formatAge(dep.flags.stale.days).replace(' ago', ' old')}</span>
+          )}
+          {dep.flags.unknown && <span class="detail">{dep.flags.unknown.reason}</span>}
+          {dep.flags.local && <span class="detail">{dep.flags.local.kind === 'git' ? 'git / URL dependency' : 'workspace or local dependency'}</span>}
+        </td>
+      </tr>
+    ))}
+  </tbody>
+</table>

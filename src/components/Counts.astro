@@ -1,0 +1,24 @@
+---
+import type { Summary } from '../lib/types';
+
+interface Props {
+  summary: Summary;
+  showTotal?: boolean;
+}
+const { summary, showTotal = true } = Astro.props;
+const items: [keyof Summary, string, string][] = [
+  ['vulnerable', 'vulnerable', 'security advisories'],
+  ['deprecated', 'deprecated', 'deprecated'],
+  ['outdatedMajor', 'outdated-major', 'major update available'],
+  ['outdated', 'outdated', 'outdated (any update available)'],
+  ['stale', 'stale', 'latest release older than a year'],
+  ['unknown', 'unknown', 'could not be checked'],
+];
+---
+<span class="counts">
+  {showTotal && <span class="badge" title="dependency entries">{summary.dependencies} deps</span>}
+  {items.map(([key, cls, title]) => (
+    <span class={`badge ${cls} ${summary[key] === 0 ? 'zero' : ''}`} title={title}>{summary[key]} {cls === 'outdated-major' ? 'major' : cls}</span>
+  ))}
+  <span class={`badge ok ${summary.ok === 0 ? 'zero' : ''}`} title="up to date">{summary.ok} ok</span>
+</span>

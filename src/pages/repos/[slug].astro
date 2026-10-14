@@ -1,0 +1,98 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Counts from '../../components/Counts.astro';
+import Controls from '../../components/Controls.astro';
+import PackageSection from '../../components/PackageSection.astro';
+import { groupByWorkspace, issueCount, loadReport } from '../../lib/data';
+import { anchorId, formatDate } from '../../lib/format';
+import type { Repository } from '../../lib/types';
+
+export function getStaticPaths() {
+  const report = loadReport();
+  return (report?.repositories ?? []).map((repo) => ({ params: { slug: repo.slug }, props: { repo } }));
+}
+
+const { repo } = Astro.props as { repo: Repository };
+const grouped = Boolean(repo.workspaceDir);
+const workspaces = grouped ? groupByWorkspace(repo.packages) : [];
+---
+<Layout title={repo.name} description={`Dependency status of every package.json in ${repo.name}.`}>
+  <h1><a href={repo.url} target="_blank" rel="noopener">{repo.name}</a></h1>
+  <p class="muted">{repo.description}</p>
+  <p class="small muted">
+    {repo.commit && <span>Commit <a href={`${repo.url}/commit/${repo.commit}`} target="_blank" rel="noopener"><code>{repo.commit.slice(0, 7)}</code></a> from {formatDate(repo.commitDate)} · </span>}
+    {repo.packages.length} package.json files
+    {grouped && <span> · {workspaces.filter((w) => w.name).length} workspaces under <code>{repo.workspaceDir}/</code></span>}
+  </p>
+  <p><Counts summary={repo.summary} /></p>
+
+  <Controls />
+
+  {grouped ? (
+    <>
+      <h2>Workspaces</h2>
+      <table class="overview">
+        <thead>
+          <tr><th>Workspace</th><th class="num">package.json</th><th class="num">deps</th><th class="num">security</th><th class="num">deprecated</th><th class="num">major</th><th class="num">outdated</th><th class="num">stale</th><th class="num">unknown</th></tr>
+        </thead>
+        <tbody>
+          {workspaces.map((ws) => (
+            <tr class="overview-row" data-issues={issueCount(ws.summary)}>
+              <td><a href={`#${anchorId('ws', ws.name ?? 'root')}`}>{ws.name ?? '(outside workspaces)'}</a></td>
+              <td class="num">{ws.packages.length}</td>
+              <td class="num">{ws.summary.dependencies}</td>
+              <td class="num">{ws.summary.vulnerable || ''}</td>
+              <td class="num">{ws.summary.deprecated || ''}</td>
+              <td class="num">{ws.summary.outdatedMajor || ''}</td>
+              <td class="num">{ws.summary.outdated || ''}</td>
+              <td class="num">{ws.summary.stale || ''}</td>
+              <td class="num">{ws.summary.unknown || ''}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h2>Packages by workspace</h2>
+      {workspaces.map((ws) => (
+        <details class="workspace" id={anchorId('ws', ws.name ?? 'root')} data-issues={issueCount(ws.summary)}>
+          <summary>
+            <span class="title">{ws.name ?? '(outside workspaces)'}</span>
+            <span class="path">{ws.packages.length} package.json {ws.packages.length === 1 ? 'file' : 'files'}</span>
+            <span class="spacer"></span>
+            <Counts summary={ws.summary} />
+          </summary>
+          <div class="body">
+            {ws.packages.map((pkg) => <PackageSection repo={repo} pkg={pkg} />)}
+          </div>
+        </details>
+      ))}
+    </>
+  ) : (
+    <>
+      <h2>package.json files</h2>
+      <table class="overview">
+        <thead>
+          <tr><th>Package</th><th>File</th><th class="num">deps</th><th class="num">security</th><th class="num">deprecated</th><th class="num">major</th><th class="num">outdated</th><th class="num">stale</th><th class="num">unknown</th></tr>
+        </thead>
+        <tbody>
+          {repo.packages.map((pkg) => (
+            <tr class="overview-row" data-issues={issueCount(pkg.summary)}>
+              <td><a href={`#${anchorId('pkg', pkg.file)}`}>{pkg.name ?? '(unnamed)'}</a></td>
+              <td class="muted small">{pkg.file}</td>
+              <td class="num">{pkg.summary.dependencies}</td>
+              <td class="num">{pkg.summary.vulnerable || ''}</td>
+              <td class="num">{pkg.summary.deprecated || ''}</td>
+              <td class="num">{pkg.summary.outdatedMajor || ''}</td>
+              <td class="num">{pkg.summary.outdated || ''}</td>
+              <td class="num">{pkg.summary.stale || ''}</td>
+              <td class="num">{pkg.summary.unknown || ''}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h2>Dependencies</h2>
+      {repo.packages.map((pkg) => <PackageSection repo={repo} pkg={pkg} />)}
+    </>
+  )}
+</Layout>

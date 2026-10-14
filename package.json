@@ -1,0 +1,24 @@
+{
+  "name": "rhdh-dependency-check",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Dependency health report for Backstage, RHDH and related plugin repositories, published as a GitHub Page.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "clone": "node scripts/clone-repos.mjs",
+    "collect": "node scripts/collect.mjs",
+    "check": "node scripts/check.mjs",
+    "report": "npm run clone && npm run collect && npm run check",
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "astro": "^5.14.0",
+    "semver": "^7.7.0"
+  }
+}
