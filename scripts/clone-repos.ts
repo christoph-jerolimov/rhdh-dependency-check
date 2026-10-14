@@ -1,13 +1,12 @@
-#!/usr/bin/env node
 /**
  * Clones (or refreshes) a shallow copy of every configured repository into ./repos.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { repositories, reposDir } from './config.mjs';
+import { repositories, reposDir } from './config.ts';
 
-function git(args, cwd) {
+function git(args: string[], cwd: string): string {
   return execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'inherit'], encoding: 'utf8' }).trim();
 }
 

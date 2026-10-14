@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { DependencyType, RepositoryConfig } from './lib/types.ts';
 
 export const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const reposDir = path.join(rootDir, 'repos');
@@ -16,7 +17,7 @@ export const reportFile = path.join(dataDir, 'report.json');
  * workspaces; package.json files below it are grouped by that child name.
  * Repositories without `workspaceDir` are shown as a flat list.
  */
-export const repositories = [
+export const repositories: RepositoryConfig[] = [
   {
     slug: 'backstage',
     name: 'backstage/backstage',
@@ -53,7 +54,7 @@ export const repositories = [
 ];
 
 /** Directory names that are never scanned for package.json files. */
-export const ignoredDirectories = new Set([
+export const ignoredDirectories: ReadonlySet<string> = new Set([
   'node_modules',
   '.git',
   '.yarn',
@@ -69,7 +70,7 @@ export const ignoredDirectories = new Set([
 ]);
 
 /** Dependency fields read from every package.json. */
-export const dependencyFields = [
+export const dependencyFields: ReadonlyArray<readonly [field: string, type: DependencyType]> = [
   ['dependencies', 'prod'],
   ['devDependencies', 'dev'],
   ['peerDependencies', 'peer'],

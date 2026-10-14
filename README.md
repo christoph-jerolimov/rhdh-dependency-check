@@ -49,6 +49,10 @@ runs daily (and on demand) and deploys to GitHub Pages:
 
 ## Local development
 
+The pipeline scripts in `scripts/` are TypeScript and run directly on Node
+(22.18 or newer) using its built-in type stripping, so there is no build step.
+`npm run typecheck` checks both the scripts and the Astro site.
+
 ```sh
 npm ci
 npm run report   # clone + collect + check (a full run takes a few minutes)

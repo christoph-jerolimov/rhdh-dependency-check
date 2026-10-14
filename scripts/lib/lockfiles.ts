@@ -6,17 +6,26 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-/** @typedef {{ type: 'yarn' | 'npm', file: string, lookup: (name: string, spec: string, fromDir: string) => string | undefined }} Lockfile */
+export interface Lockfile {
+  type: 'yarn' | 'npm';
+  file: string;
+  lookup(name: string, spec: string, fromDir: string): string | undefined;
+}
 
-function stripQuotes(s) {
+interface PackageLockJson {
+  packages?: Record<string, { version?: string }>;
+  dependencies?: Record<string, { version?: string }>;
+}
+
+function stripQuotes(s: string): string {
   return s.replace(/^["']|["']$/g, '');
 }
 
 /** Parses a yarn.lock (classic or berry) into a map of `name@spec` -> version. */
-export function parseYarnLock(content) {
-  const map = new Map();
+export function parseYarnLock(content: string): Map<string, string> {
+  const map = new Map<string, string>();
   const lines = content.split(/\r?\n/);
-  let currentKeys = [];
+  let currentKeys: string[] = [];
   for (const rawLine of lines) {
     if (!rawLine || rawLine.startsWith('#')) continue;
     if (!rawLine.startsWith(' ')) {
@@ -27,14 +36,15 @@ export function parseYarnLock(content) {
     }
     const m = rawLine.match(/^\s{2}version:?\s+"?([^"\s]+)"?\s*$/);
     if (m && currentKeys.length) {
+      const version = m[1]!;
       for (const key of currentKeys) {
-        map.set(key, m[1]);
+        map.set(key, version);
         // Berry prefixes npm ranges with "npm:"; also register the bare form.
         const idx = key.lastIndexOf('@');
         if (idx > 0) {
           const name = key.slice(0, idx);
           const spec = key.slice(idx + 1);
-          if (spec.startsWith('npm:')) map.set(`${name}@${spec.slice(4)}`, m[1]);
+          if (spec.startsWith('npm:')) map.set(`${name}@${spec.slice(4)}`, version);
         }
       }
       currentKeys = [];
@@ -43,7 +53,7 @@ export function parseYarnLock(content) {
   return map;
 }
 
-function loadYarnLock(file) {
+function loadYarnLock(file: string): Lockfile {
   const map = parseYarnLock(fs.readFileSync(file, 'utf8'));
   return {
     type: 'yarn',
@@ -54,10 +64,10 @@ function loadYarnLock(file) {
   };
 }
 
-function loadPackageLock(file) {
-  let json;
+function loadPackageLock(file: string): Lockfile | undefined {
+  let json: PackageLockJson;
   try {
-    json = JSON.parse(fs.readFileSync(file, 'utf8'));
+    json = JSON.parse(fs.readFileSync(file, 'utf8')) as PackageLockJson;
   } catch {
     return undefined;
   }
@@ -72,7 +82,8 @@ function loadPackageLock(file) {
       let dir = path.relative(lockDir, fromDir).split(path.sep).filter(Boolean);
       for (;;) {
         const key = [...dir, 'node_modules', name].join('/');
-        if (packages[key]?.version) return packages[key].version;
+        const version = packages[key]?.version;
+        if (version) return version;
         if (!dir.length) break;
         dir = dir.slice(0, -1);
       }
@@ -82,20 +93,21 @@ function loadPackageLock(file) {
   };
 }
 
-const lockfileCache = new Map();
+const loaders: ReadonlyArray<readonly [string, (file: string) => Lockfile | undefined]> = [
+  ['yarn.lock', loadYarnLock],
+  ['package-lock.json', loadPackageLock],
+];
+
+const lockfileCache = new Map<string, Lockfile | undefined>();
 
 /**
  * Finds the nearest lockfile for a package directory, searching upwards but
  * never leaving `rootDir`.
- * @returns {Lockfile | undefined}
  */
-export function findLockfile(packageDir, rootDir) {
+export function findLockfile(packageDir: string, rootDir: string): Lockfile | undefined {
   let dir = packageDir;
   for (;;) {
-    for (const [fileName, loader] of [
-      ['yarn.lock', loadYarnLock],
-      ['package-lock.json', loadPackageLock],
-    ]) {
+    for (const [fileName, loader] of loaders) {
       const file = path.join(dir, fileName);
       if (fs.existsSync(file)) {
         if (!lockfileCache.has(file)) lockfileCache.set(file, loader(file));

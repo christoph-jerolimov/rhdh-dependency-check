@@ -2,17 +2,24 @@
  * Turns one package.json dependency plus its registry metadata into a status.
  */
 import semver from 'semver';
+import type { Advisory, CollectedDependency, Dependency, Level, RegistryPackage, ResolvedSource, Summary } from './types.ts';
 
 /** Row level in descending severity; used for colouring and sorting. */
-export const levels = ['vulnerable', 'deprecated', 'outdated-major', 'outdated', 'stale', 'ok', 'local', 'unknown'];
+export const levels: readonly Level[] = ['vulnerable', 'deprecated', 'outdated-major', 'outdated', 'stale', 'ok', 'local', 'unknown'];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export function emptySummary() {
+export interface AnalyzeOptions {
+  /** Reference time in epoch milliseconds. */
+  now: number;
+  staleAfterDays: number;
+}
+
+export function emptySummary(): Summary {
   return { dependencies: 0, vulnerable: 0, deprecated: 0, outdated: 0, outdatedMajor: 0, stale: 0, ok: 0, local: 0, unknown: 0 };
 }
 
-export function addToSummary(summary, dep) {
+export function addToSummary(summary: Summary, dep: Dependency): Summary {
   summary.dependencies++;
   if (dep.flags.vulnerable) summary.vulnerable++;
   if (dep.flags.deprecated) summary.deprecated++;
@@ -27,24 +34,25 @@ export function addToSummary(summary, dep) {
   return summary;
 }
 
-export function mergeSummaries(target, source) {
-  for (const key of Object.keys(target)) target[key] += source[key] ?? 0;
+export function mergeSummaries(target: Summary, source: Summary): Summary {
+  for (const key of Object.keys(target) as (keyof Summary)[]) target[key] += source[key] ?? 0;
   return target;
 }
 
-function daysBetween(from, to) {
+function daysBetween(from: string, to: number): number | null {
   const t = Date.parse(from);
   if (Number.isNaN(t)) return null;
   return Math.floor((to - t) / DAY_MS);
 }
 
-/**
- * Picks the version that `range` would install today, ignoring lockfiles.
- * @param {string[]} versions all published versions
- * @param {Record<string,string>} distTags
- */
-export function resolveRange(range, versions, distTags) {
-  if (distTags?.[range]) return { version: distTags[range], source: 'tag' };
+/** Picks the version that `range` would install today, ignoring lockfiles. */
+export function resolveRange(
+  range: string,
+  versions: string[],
+  distTags: Record<string, string> | undefined,
+): { version: string | undefined; source: ResolvedSource | null } {
+  const tagged = distTags?.[range];
+  if (tagged) return { version: tagged, source: 'tag' };
   const validRange = semver.validRange(range, { loose: true });
   if (!validRange) return { version: undefined, source: null };
   const includePrerelease = /-/.test(range);
@@ -54,12 +62,16 @@ export function resolveRange(range, versions, distTags) {
 
 /**
  * @param dep         entry from data/packages.json
- * @param info        registry summary from RegistryClient#getPackage (may be undefined for local deps)
+ * @param info        registry summary from RegistryClient#getPackage (undefined for local deps)
  * @param advisories  advisories for the package, from RegistryClient#getAdvisories
- * @param options     { now: number, staleAfterDays: number }
  */
-export function analyzeDependency(dep, info, advisories, { now, staleAfterDays }) {
-  const result = {
+export function analyzeDependency(
+  dep: CollectedDependency,
+  info: RegistryPackage | undefined,
+  advisories: Advisory[] | undefined,
+  { now, staleAfterDays }: AnalyzeOptions,
+): Dependency {
+  const result: Dependency = {
     ...dep,
     resolved: null,
     resolvedSource: null,
@@ -88,20 +100,21 @@ export function analyzeDependency(dep, info, advisories, { now, staleAfterDays }
     return result;
   }
 
-  const versions = Object.keys(info.versions ?? {});
+  const versionMap = info.versions ?? {};
+  const versions = Object.keys(versionMap);
   const latest = info.distTags?.latest ?? null;
   result.latest = latest;
-  result.latestTime = latest ? (info.versions?.[latest]?.time ?? null) : null;
+  result.latestTime = latest ? (versionMap[latest]?.time ?? null) : null;
   result.latestAgeDays = result.latestTime ? daysBetween(result.latestTime, now) : null;
 
-  let resolved = dep.lockVersion && semver.valid(dep.lockVersion, { loose: true }) ? dep.lockVersion : undefined;
-  let resolvedSource = resolved ? 'lockfile' : null;
+  let resolved: string | undefined = dep.lockVersion && semver.valid(dep.lockVersion, { loose: true }) ? dep.lockVersion : undefined;
+  let resolvedSource: ResolvedSource | null = resolved ? 'lockfile' : null;
   if (!resolved) {
     ({ version: resolved, source: resolvedSource } = resolveRange(dep.range, versions, info.distTags));
   }
   result.resolved = resolved ?? null;
   result.resolvedSource = resolvedSource;
-  result.resolvedTime = resolved ? (info.versions?.[resolved]?.time ?? null) : null;
+  result.resolvedTime = resolved ? (versionMap[resolved]?.time ?? null) : null;
 
   if (!resolved) {
     result.level = 'unknown';
@@ -109,11 +122,11 @@ export function analyzeDependency(dep, info, advisories, { now, staleAfterDays }
   }
 
   // Deprecation: of the version in use, and of the package's latest version.
-  const deprecatedMessage = resolved ? info.versions?.[resolved]?.deprecated : undefined;
-  const latestDeprecated = latest ? info.versions?.[latest]?.deprecated : undefined;
+  const deprecatedMessage = resolved ? versionMap[resolved]?.deprecated : undefined;
+  const latestDeprecated = latest ? versionMap[latest]?.deprecated : undefined;
   if (deprecatedMessage || latestDeprecated) {
     result.flags.deprecated = {
-      message: deprecatedMessage ?? latestDeprecated,
+      message: (deprecatedMessage ?? latestDeprecated)!,
       resolvedDeprecated: Boolean(deprecatedMessage),
       latestDeprecated: Boolean(latestDeprecated),
     };
@@ -124,7 +137,8 @@ export function analyzeDependency(dep, info, advisories, { now, staleAfterDays }
     result.flags.outdated = {
       diff: semver.diff(resolved, latest) ?? 'unknown',
       rangeAllowsLatest: Boolean(semver.validRange(dep.range, { loose: true })) && semver.satisfies(latest, dep.range, { loose: true }),
-      behindDays: result.resolvedTime && result.latestTime ? Math.max(0, daysBetween(result.resolvedTime, Date.parse(result.latestTime))) : null,
+      behindDays:
+        result.resolvedTime && result.latestTime ? Math.max(0, daysBetween(result.resolvedTime, Date.parse(result.latestTime)) ?? 0) : null,
     };
   }
 
@@ -135,9 +149,10 @@ export function analyzeDependency(dep, info, advisories, { now, staleAfterDays }
 
   // Security advisories affecting the version in use.
   if (resolved && advisories?.length) {
+    const version = resolved;
     const hits = advisories.filter((a) => {
       try {
-        return semver.satisfies(resolved, a.vulnerableVersions, { loose: true, includePrerelease: true });
+        return semver.satisfies(version, a.vulnerableVersions, { loose: true, includePrerelease: true });
       } catch {
         return false;
       }

@@ -1,3 +1,11 @@
+import type { DependencyKind } from './types.ts';
+
+export interface ParsedSpec {
+  kind: DependencyKind;
+  packageName: string;
+  range: string;
+}
+
 /**
  * Classifies a dependency specifier from package.json.
  *
@@ -9,7 +17,7 @@
  */
 const localProtocols = ['workspace:', 'link:', 'file:', 'portal:', 'patch:', 'backstage:', 'catalog:', 'exec:'];
 
-export function parseSpec(name, spec) {
+export function parseSpec(name: string, spec: string | undefined): ParsedSpec {
   const trimmed = (spec ?? '').trim();
   if (trimmed.startsWith('npm:')) {
     const rest = trimmed.slice(4);

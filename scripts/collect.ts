@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Walks every cloned repository, reads all package.json files and records their
  * dependencies (including the version resolved by the nearest lockfile).
@@ -7,18 +6,12 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import {
-  dataDir,
-  dependencyFields,
-  ignoredDirectories,
-  packagesFile,
-  repositories,
-  reposDir,
-} from './config.mjs';
-import { findLockfile } from './lib/lockfiles.mjs';
-import { parseSpec } from './lib/spec.mjs';
+import { dataDir, dependencyFields, ignoredDirectories, packagesFile, repositories, reposDir } from './config.ts';
+import { findLockfile } from './lib/lockfiles.ts';
+import { parseSpec } from './lib/spec.ts';
+import type { CollectedDependency, CollectedPackage, GitInfo, PackagesFile } from './lib/types.ts';
 
-function* walk(dir) {
+function* walk(dir: string): Generator<string> {
   const entries = fs.readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
@@ -31,8 +24,8 @@ function* walk(dir) {
   }
 }
 
-function gitInfo(dir) {
-  const run = (args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' }).trim();
+function gitInfo(dir: string): GitInfo {
+  const run = (args: string[]) => execFileSync('git', args, { cwd: dir, encoding: 'utf8' }).trim();
   try {
     return {
       commit: run(['rev-parse', 'HEAD']),
@@ -44,7 +37,17 @@ function gitInfo(dir) {
   }
 }
 
-const output = { generatedAt: new Date().toISOString(), repositories: [] };
+function readPackageJson(file: string, relativeFile: string): Record<string, unknown> | undefined {
+  try {
+    const json: unknown = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return json && typeof json === 'object' ? (json as Record<string, unknown>) : undefined;
+  } catch (error) {
+    console.warn(`  Ignoring unreadable ${relativeFile}: ${error instanceof Error ? error.message : String(error)}`);
+    return undefined;
+  }
+}
+
+const output: PackagesFile = { generatedAt: new Date().toISOString(), repositories: [] };
 let totalFiles = 0;
 let totalDeps = 0;
 
@@ -54,33 +57,27 @@ for (const repo of repositories) {
     console.warn(`Skipping ${repo.name}: ${repoDir} does not exist (run "npm run clone" first)`);
     continue;
   }
-  const packages = [];
+  const packages: CollectedPackage[] = [];
   for (const file of walk(repoDir)) {
     const relativeFile = path.relative(repoDir, file).split(path.sep).join('/');
-    let json;
-    try {
-      json = JSON.parse(fs.readFileSync(file, 'utf8'));
-    } catch (error) {
-      console.warn(`  Ignoring unreadable ${relativeFile}: ${error.message}`);
-      continue;
-    }
-    if (!json || typeof json !== 'object') continue;
+    const json = readPackageJson(file, relativeFile);
+    if (!json) continue;
 
-    let workspace = null;
+    let workspace: string | null = null;
     if (repo.workspaceDir) {
       const prefix = `${repo.workspaceDir}/`;
       if (relativeFile.startsWith(prefix)) {
-        workspace = relativeFile.slice(prefix.length).split('/')[0];
+        workspace = relativeFile.slice(prefix.length).split('/')[0] ?? null;
       }
     }
 
     const packageDir = path.dirname(file);
     const lockfile = findLockfile(packageDir, repoDir);
-    const dependencies = [];
+    const dependencies: CollectedDependency[] = [];
     for (const [field, type] of dependencyFields) {
       const deps = json[field];
       if (!deps || typeof deps !== 'object') continue;
-      for (const [name, rawSpec] of Object.entries(deps)) {
+      for (const [name, rawSpec] of Object.entries(deps as Record<string, unknown>)) {
         const spec = typeof rawSpec === 'string' ? rawSpec : String(rawSpec);
         const parsed = parseSpec(name, spec);
         const lockVersion = lockfile?.lookup(name, spec, packageDir);
